@@ -43,28 +43,30 @@ export class PVOutputAPI {
   // Network Request with Multi-Proxy Fallback Chain
   async fetchPVOutput(endpoint, queryParams = {}) {
     const params = new URLSearchParams({
-      key: this.state.apiKey,
       sid: this.state.systemId,
       _t: Date.now().toString(),
       ...queryParams
     });
 
-    const targetUrl = `https://pvoutput.org/service/r2/${endpoint}?${params.toString()}`;
     const proxyCandidates = [];
 
     if (this.state.proxyUrl) {
-      proxyCandidates.push({
-        type: "raw",
-        url: this.state.proxyUrl.includes("%s") ? this.state.proxyUrl.replace("%s", encodeURIComponent(targetUrl)) : `${this.state.proxyUrl}${encodeURIComponent(targetUrl)}`
-      });
-    }
+      // Cloudflare Worker mode: the worker injects the secret API key
+      // server-side, so the key never travels to or from the browser.
+      const base = this.state.proxyUrl.replace(/\/+$/, "");
+      proxyCandidates.push({ type: "raw", url: `${base}/${endpoint}?${params.toString()}` });
+    } else {
+      // Legacy mode (local dev / public proxies): the API key must travel
+      // inside the target URL, because a dumb proxy only forwards it.
+      const paramsWithKey = new URLSearchParams(params);
+      paramsWithKey.set("key", this.state.apiKey);
+      const targetUrl = `https://pvoutput.org/service/r2/${endpoint}?${paramsWithKey.toString()}`;
 
-    proxyCandidates.push({ type: "raw", url: `https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(targetUrl)}` });
-    proxyCandidates.push({ type: "raw", url: `https://corsproxy.io/?${encodeURIComponent(targetUrl)}` });
-    proxyCandidates.push({ type: "raw", url: `https://thingproxy.freeboard.io/fetch/${targetUrl}` });
-    proxyCandidates.push({ type: "raw", url: `https://api.allorigins.win/raw?url=${encodeURIComponent(targetUrl)}` });
-    proxyCandidates.push({ type: "allorigins-json", url: `https://api.allorigins.win/get?url=${encodeURIComponent(targetUrl)}` });
-    proxyCandidates.push({ type: "raw", url: targetUrl });
+      proxyCandidates.push({ type: "raw", url: `https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(targetUrl)}` });
+      proxyCandidates.push({ type: "raw", url: `https://api.allorigins.win/raw?url=${encodeURIComponent(targetUrl)}` });
+      proxyCandidates.push({ type: "allorigins-json", url: `https://api.allorigins.win/get?url=${encodeURIComponent(targetUrl)}` });
+      proxyCandidates.push({ type: "raw", url: targetUrl });
+    }
 
     let lastError = null;
     let isRateLimited = false;

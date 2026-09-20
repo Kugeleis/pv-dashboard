@@ -11,6 +11,7 @@ Designed with a 100% German user interface (*100% Deutsch*) tailored for high vi
 The codebase has been meticulously refactored using pure vanilla JavaScript to embrace **SOLID** principles, particularly the **Single Responsibility Principle (SRP)**, while preserving maximum readability (**KISS**). There are no complex build steps required.
 
 The application logic is broken down into highly focused ES6 modules:
+
 - `app.js` (Orchestrator): The main entry point. It holds the global state, binds modules together, handles timing/intervals, and orchestrates the data loading flow.
 - `api.js` (`PVOutputAPI`): Strictly handles all interactions with PVOutput.org. This includes multi-proxy fallbacks, rate limit throttling, sequential data fetching, and transforming raw CSV data into clean JS objects.
 - `ui.js` (`DashboardUI`): Manages the DOM. Responsible for taking state data and rendering it to the visual components, including updating texts, classes, conditional visibility, and the sun arc position.
@@ -30,28 +31,114 @@ The application logic is broken down into highly focused ES6 modules:
 - **Lifetime Statistics & Records**: All-time energy total, daily average production, historical single-day record yield with date, and total active recording days.
 - **System Specs Display**: Shows installed capacity (Wp), panel brand & counts, inverter model, and system name.
 
+
 ---
 
 ## 🔒 Security & Credentials Architecture
 
 Zero secrets or credentials are hardcoded into the source code repository. Credentials are dynamically resolved at runtime using the following precedence:
 
-1. **URL Query Parameters** (ideal for bookmarks or sharing):
+1. **URL Query Parameters** (convenience for bookmarks — *local use only, do not share*):
    ```text
    https://yourusername.github.io/ha-dashboard/?sid=YOUR_SYSTEM_ID&key=YOUR_API_KEY
    ```
-2. **Browser `localStorage`**: Persisted safely in browser storage when entered via the settings dialog.
-3. **`secrets.json` File** (Local Development & GitHub Actions):
-   - **Local Dev**: Create `secrets.json` locally (Git-ignored).
-   - **GitHub Pages**: Automatically generated during deployment if GitHub Repository Secrets are configured.
-   ```json
-   {
-     "systemId": "YOUR_SYSTEM_ID",
-     "apiKey": "YOUR_READONLY_API_KEY",
-     "proxyUrl": ""
-   }
-   ```
-4. **Settings Dialog**: Click **⚙️ Einstellungen** in the top navigation bar to configure or update your **System ID**, **API Key**, or custom CORS proxy URL at any time.
+2. **Browser `localStorage`**: Persisted when entered via the settings dialog.
+3. **`secrets.json` File** (generated at deploy time — see below).
+4. **Settings Dialog**: Click **⚙️ Einstellungen** to configure **System ID**, **API Key**, or the proxy URL.
+
+> [!IMPORTANT]
+> **GitHub Pages is static hosting — every file in the deployed artifact is world-readable.**
+> A `secrets.json` containing the API key can be read by anyone at
+> `https://yourusername.github.io/ha-dashboard/secrets.json`. GitHub "repository secrets"
+> only protect the build, never the deployed output.
+>
+> Therefore, the deployment workflow **no longer writes the API key into `secrets.json`**.
+> It only contains the **System ID** and the **Worker URL** (both non-secret). The API key
+> lives as an encrypted secret **inside your own Cloudflare Worker** (see next section)
+> and is injected server-side — it never appears in the browser at all.
+
+`secrets.json` structure after deployment:
+
+```json
+{
+  "systemId": "YOUR_SYSTEM_ID",
+  "proxyUrl": "https://pvoutput-proxy.YOUR_SUBDOMAIN.workers.dev"
+}
+```
+
+---
+
+## ☁️ Cloudflare Worker Proxy (Recommended)
+
+**PVOutput.org does not send `Access-Control-Allow-Origin` headers**, so a browser hosted
+on GitHub Pages cannot call the API directly. Public CORS proxies (CodeTabs, AllOrigins,
+CorsProxy.io, ThingProxy…) are unreliable: they rate-limit, they block non-localhost
+origins (CorsProxy.io's free tier only serves `localhost`), or they are simply dead
+(ThingProxy). This is why the dashboard worked locally but failed on GitHub Pages.
+
+The bundled worker (`cloudflare/worker.js`) solves both problems at once:
+
+- ✅ It adds the required **CORS headers**.
+- ✅ It **injects the PVOutput API key server-side** from the encrypted worker secret
+  `PVOUTPUT_API_KEY` — the key never travels to or from the browser.
+
+**Request flow:**
+
+```text
+Browser (GitHub Pages)                Cloudflare Worker                PVOutput.org
+──────────────────────                ─────────────────                ────────────
+GET /getstatus.jsp?sid=…&h=1    →     adds ?key=*** (secret)     →     https://pvoutput.org/service/r2/getstatus.jsp?…
+← CSV text + CORS headers       ←     forwards CSV               ←     CSV text
+```
+
+### Option A: Deploy with the Wrangler CLI (recommended)
+
+```bash
+cd cloudflare
+npm install -g wrangler          # or use: npx wrangler
+wrangler login
+wrangler deploy                                          # publishes the worker
+wrangler secret put PVOUTPUT_API_KEY                     # paste your read-only key
+wrangler secret put PVOUTPUT_SYSTEM_ID                   # optional fallback
+```
+
+Your worker URL will be printed after `wrangler deploy`, e.g.:
+
+```text
+https://pvoutput-proxy.YOUR_SUBDOMAIN.workers.dev
+```
+
+
+### Option B: Deploy via the Cloudflare Dashboard (no CLI)
+
+1. Go to the [Cloudflare Dashboard](https://dash.cloudflare.com/) → **Workers & Pages** → **Create Application** → **Create Worker**.
+2. Name it (e.g. `pvoutput-proxy`) and click **Deploy**.
+3. Click **Edit Code**, paste the full contents of [`cloudflare/worker.js`](cloudflare/worker.js), and **Deploy**.
+4. Go to your worker → **Settings** → **Variables and Secrets** → add:
+   - `PVOUTPUT_API_KEY` (type: **Secret**) = your PVOutput **read-only** API key.
+   - `PVOUTPUT_SYSTEM_ID` (type: **Secret**, optional) = your System ID fallback.
+
+### Verify the worker
+
+```bash
+curl https://pvoutput-proxy.YOUR_SUBDOMAIN.workers.dev/health
+# → {"ok":true,"service":"pvoutput-proxy","keyConfigured":true}
+
+curl "https://pvoutput-proxy.YOUR_SUBDOMAIN.workers.dev/getstatus.jsp?sid=YOUR_SID"
+# → PVOutput CSV, e.g. "20240920,14:55,1234,567,0,0,5.982,18.0"
+```
+
+### Wire it into the dashboard
+
+Set the worker URL either:
+
+- as the GitHub repository secret **`PVOUTPUT_PROXY_URL`** (auto-deployed via `secrets.json`), or
+- in the dashboard's **⚙️ Einstellungen → CORS Proxy Server** field (stored in `localStorage`).
+
+When a proxy URL is configured, the frontend calls the worker **without** any API key.
+If no proxy URL is configured, the dashboard falls back to a public proxy chain
+(CodeTabs / AllOrigins) where the key travels inside the URL — this only makes sense
+for local development.
 
 ---
 
@@ -59,89 +146,70 @@ Zero secrets or credentials are hardcoded into the source code repository. Crede
 
 To run the dashboard locally:
 
-1. Copy `secrets_example.json` to `secrets.json` and add your system credentials:
+1. Copy `secrets_example.json` to `secrets.json` and add your credentials:
+
    ```bash
    cp secrets_example.json secrets.json
    ```
+
 2. Start a local HTTP server:
+
    ```bash
    python3 -m http.server 8080 --bind 127.0.0.1
    ```
+
 3. Open `http://127.0.0.1:8080` in your web browser.
+
+> [!NOTE]
+> Locally you can leave `proxyUrl` empty: browsers treat `http://127.0.0.1` as a
+> development origin, so the public proxy fallback chain usually works there.
+> For parity with production, set `proxyUrl` to your worker URL as well.
 
 ---
 
 ## 🌐 GitHub Pages Deployment & Repository Secrets
 
-This repository includes a GitHub Actions workflow (`.github/workflows/pages.yml`) that automatically builds and deploys the dashboard to **GitHub Pages** whenever changes are pushed to `main`.
+This repository includes a GitHub Actions workflow (`.github/workflows/pages.yml`) that
+automatically builds and deploys the dashboard to **GitHub Pages** whenever changes are
+pushed to `main` (or `master`).
 
 ### Configuring GitHub Repository Secrets
 
-You can supply your PVOutput system credentials securely via GitHub Repository Secrets:
+Go to your repository → **Settings** → **Secrets and variables** → **Actions** → **New repository secret**:
 
-1. Go to your repository on GitHub.
-2. Navigate to **Settings** → **Secrets and variables** → **Actions**.
-3. Click **New repository secret** and define:
-   - `PVOUTPUT_SYSTEM_ID`: Your PVOutput System ID (e.g. `12345`).
-   - `PVOUTPUT_API_KEY`: Your PVOutput API Key (use a **Read-Only** API key).
-   - `PVOUTPUT_PROXY_URL`: *(Optional)* Custom CORS Proxy URL.
-4. Push your changes to `main`. The deployment workflow will automatically generate `secrets.json` during build time and deploy it with your static site.
+| Secret                | Required | Value                                                                       |
+| --------------------- | -------- | --------------------------------------------------------------------------- |
+| `PVOUTPUT_SYSTEM_ID`  | ✅       | Your PVOutput System ID (e.g. `12345`)                                      |
+| `PVOUTPUT_PROXY_URL`  | ✅       | Your worker URL, e.g. `https://pvoutput-proxy.YOUR_SUBDOMAIN.workers.dev`   |
+| `PVOUTPUT_API_KEY`    | ❌       | **No longer used by the site.** The key belongs in the Cloudflare Worker secret instead. |
 
 > [!NOTE]
-> Because GitHub Pages hosts client-side static files, `secrets.json` will be fetched by the browser. Always use a **Read-Only API Key** when deploying to GitHub Pages.
+> Secrets are read at **build time**. After adding or changing a secret, re-run the
+> deployment (push to `main` or re-run the workflow from the Actions tab).
+> Also make sure your changes actually land on `main` — the workflow does not run
+> for feature branches.
+
+The workflow generates `secrets.json` (System ID + Worker URL only) and verifies its
+existence in the build log. To confirm on the live site, open
+`https://yourusername.github.io/ha-dashboard/secrets.json` — it must contain
+`systemId` and `proxyUrl`, and **no API key**.
 
 ---
 
-## ⚡ CORS & Proxy Architecture on GitHub Pages
+## 🐞 Debugging Guide
 
-Because **PVOutput.org** does not send `Access-Control-Allow-Origin` headers, browser applications hosted on external origins (such as `https://yourusername.github.io`) cannot fetch data directly without encountering browser CORS blocks.
+| Symptom / check                        | How                                                                                                                            |
+| -------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------ |
+| Is `secrets.json` deployed?            | Open `https://yourusername.github.io/ha-dashboard/secrets.json` in the browser. 404 → deployment didn't run or secrets missing. |
+| Which secrets did the build see?       | Repo → **Actions** → latest *Deploy to GitHub Pages* run → step *"Generate secrets.json"* / *"Verify secrets.json"*.            |
+| Is the worker alive & key set?         | `curl https://…/workers.dev/health` → `"keyConfigured": true`. If `false`, run `wrangler secret put PVOUTPUT_API_KEY` again.    |
+| Does the worker reach PVOutput?        | `curl "https://…/workers.dev/getstatus.jsp?sid=YOUR_SID"` → expect CSV. `Err 402/403` → wrong key/sid or PVOutput rate limit.   |
+| Which proxy failed in the browser?     | DevTools (F12) → **Console**: each failed candidate logs `Proxy Attempt (<url>) failed:`. **Network** tab shows status codes.   |
+| Is the API key itself valid?           | `curl "https://pvoutput.org/service/r2/getstatus.jsp?key=KEY&sid=SID"` directly from your machine.                              |
 
-To guarantee maximum reliability on GitHub Pages, this dashboard uses a **Multi-Proxy Fallback Chain**:
+The status banner on the page maps to causes as follows:
 
-1. **Custom User Proxy** (if configured via settings, URL parameter, or `secrets.json`)
-2. **CodeTabs Proxy** (`https://api.codetabs.com/v1/proxy?quest=`)
-3. **CorsProxy.io** (`https://corsproxy.io/?`)
-4. **ThingProxy** (`https://thingproxy.freeboard.io/fetch/`)
-5. **AllOrigins** (`https://api.allorigins.win/raw?url=`)
-6. **AllOrigins JSON Wrapper** (`https://api.allorigins.win/get?url=`)
-7. **Direct URL** *(for non-browser environments)*
+- *„Bitte PVOutput System-ID & API-Key eintragen"* → no credentials found at all (check `secrets.json` / settings).
+- *„⚠️ API-Limit erreicht"* → PVOutput 60-requests-per-hour limit hit (quota is per API key).
+- *„Keine Daten geladen. Öffentliche CORS-Proxys blockiert? …"* → every proxy candidate failed (check worker `/health` and the console logs).
 
-### 🔒 Recommended: 1-Click Custom Cloudflare Worker Proxy
-
-If public CORS proxies experience temporary rate limits or outages, you can host your own **100% private, free CORS proxy** on Cloudflare Workers (100,000 requests/day free):
-
-1. Go to [Cloudflare Dashboard](https://dash.cloudflare.com/) → **Workers & Pages** → **Create Application**.
-2. Name your worker (e.g. `pvoutput-cors-proxy`) and click **Deploy**.
-3. Click **Edit Code** and paste the following JavaScript:
-
-```javascript
-export default {
-  async fetch(request) {
-    const url = new URL(request.url).searchParams.get("url");
-    if (!url) {
-      return new Response("Missing target 'url' parameter", { status: 400 });
-    }
-
-    try {
-      const response = await fetch(url, {
-        headers: { "User-Agent": "Mozilla/5.0 PVOutput-Dashboard" }
-      });
-      const newHeaders = new Headers(response.headers);
-      newHeaders.set("Access-Control-Allow-Origin", "*");
-      newHeaders.set("Access-Control-Allow-Methods", "GET, HEAD, OPTIONS");
-      return new Response(response.body, {
-        status: response.status,
-        headers: newHeaders
-      });
-    } catch (err) {
-      return new Response("Proxy error: " + err.message, { status: 502 });
-    }
-  }
-};
-```
-
-4. Save and deploy.
-5. In your Dashboard **⚙️ Einstellungen**, set the **CORS Proxy Server** to:
-   ```text
-   https://pvoutput-cors-proxy.YOUR_SUBDOMAIN.workers.dev/?url=
-   ```
