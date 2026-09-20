@@ -347,15 +347,14 @@
 
         <label for="input-proxy-url">
           <span data-i18n="settingsProxy">CORS Proxy Server (Optional)</span>
-          <input type="url" id="input-proxy-url" placeholder="Automatisch (Standard: CodeTabs / CorsProxy / AllOrigins)">
-          <small data-i18n="settingsProxySub">Automatische Ausweichkette für GitHub Pages aktiv. Falls Anfragen dennoch blockiert werden, tragen Sie hier eine eigene Proxy-URL ein (z.B. Cloudflare Worker).</small>
+          <input type="url" id="input-proxy-url" placeholder="https://pvoutput-proxy.ihre-subdomain.workers.dev (leer = automatische Kette)">
+          <small data-i18n="settingsProxySub">Empfohlen: eigener Cloudflare Worker (API-Key bleibt serverseitig). Dessen URL hier eintragen. Ohne Eintrag läuft eine öffentliche Fallback-Kette (CodeTabs/AllOrigins).</small>
         </label>
         <details>
           <summary><small data-i18n="settingsProxyTip">💡 Tipp: Eigenen kostenlosen Cloudflare Worker Proxy nutzen</small></summary>
           <small style="display:block; margin-top: 0.5rem; line-height: 1.4;">
-            <span data-i18n="settingsProxyCode1">Erstellen Sie in Cloudflare einen Worker mit folgendem Code:</span><br>
-            <code>export default { async fetch(req) { const u = new URL(req.url).searchParams.get('url'); if(!u) return new Response('Missing url', {status:400}); const r = await fetch(u); const h = new Headers(r.headers); h.set('Access-Control-Allow-Origin', '*'); return new Response(r.body, {status: r.status, headers: h}); } };</code><br>
-            <span data-i18n="settingsProxyCode2">Tragen Sie dann Ihre Worker-URL (z.B. </span><code>https://mein-proxy.workers.dev/?url=</code><span data-i18n="settingsProxyCode3">) oben ein.</span>
+            <span data-i18n="settingsProxyCode1">Verwenden Sie die im Repository enthaltene Datei cloudflare/worker.js als Worker-Code – sie injiziert den API-Key serverseitig, sodass dieser niemals im Browser sichtbar ist.</span><br>
+            <span data-i18n="settingsProxyCode2">Tragen Sie dann Ihre Worker-URL (z.B. </span><code>https://pvoutput-proxy.ihre-subdomain.workers.dev</code><span data-i18n="settingsProxyCode3">) oben ein.</span>
           </small>
         </details>
 
