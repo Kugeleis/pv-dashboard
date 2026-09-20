@@ -31,24 +31,30 @@ jobs:
         uses: actions/configure-pages@v5
 
       - name: Generate secrets.json from GitHub Repository Secrets
+        # NOTE: The PVOutput API key is intentionally NOT written into
+        # secrets.json. GitHub Pages is static hosting, so every file in the
+        # artifact is world-readable. The API key lives as a secret inside
+        # the Cloudflare Worker proxy instead (see README "Cloudflare Worker").
         env:
           PVOUTPUT_SYSTEM_ID: ${{ secrets.PVOUTPUT_SYSTEM_ID }}
-          PVOUTPUT_API_KEY: ${{ secrets.PVOUTPUT_API_KEY }}
           PVOUTPUT_PROXY_URL: ${{ secrets.PVOUTPUT_PROXY_URL }}
         run: |
-          python3 -c "
+          python3 - <<'PY'
           import os, json
-          sys_id = os.environ.get('PVOUTPUT_SYSTEM_ID', '')
-          api_key = os.environ.get('PVOUTPUT_API_KEY', '')
-          proxy_url = os.environ.get('PVOUTPUT_PROXY_URL', '')
-          if sys_id or api_key or proxy_url:
-              data = {'systemId': sys_id, 'apiKey': api_key, 'proxyUrl': proxy_url}
-              with open('secrets.json', 'w') as f:
-                  json.dump(data, f, indent=2)
-              print('Generated secrets.json from GitHub Repository Secrets.')
-          else:
-              print('No GitHub Repository Secrets found. Skipping secrets.json generation.')
-          "
+          data = {
+              "systemId": os.environ.get("PVOUTPUT_SYSTEM_ID", "").strip(),
+              "proxyUrl": os.environ.get("PVOUTPUT_PROXY_URL", "").strip(),
+          }
+          with open("secrets.json", "w", encoding="utf-8") as f:
+              json.dump(data, f, indent=2)
+          print("Generated secrets.json (systemId + proxyUrl only).")
+          PY
+
+      - name: Verify secrets.json exists
+        run: |
+          test -f secrets.json || { echo "ERROR: secrets.json was not generated"; exit 1; }
+          echo "secrets.json content (no API key, by design):"
+          cat secrets.json
 
       - name: Upload artifact
         uses: actions/upload-pages-artifact@v3
