@@ -1,0 +1,16 @@
+# Files that must NOT be uploaded as dashboard assets
+# (gitignore-style; applied when `npx wrangler deploy` uploads `assets.directory`)
+.git
+.github
+.wrangler
+.dev.vars
+.env
+node_modules
+cloudflare
+m75-home
+*.md
+prek.toml
+secrets_example.json
+manifest.json
+wrangler.jsonc
+.assetsignore
