@@ -24,7 +24,9 @@ const PVOUTPUT_BASE = "https://pvoutput.org/service/r2/";
 const CORS_HEADERS = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Methods": "GET, OPTIONS",
-  "Access-Control-Allow-Headers": "Content-Type",
+  // "*" avoids failing preflights for clients that send extra headers
+  // (e.g. cached older app.js versions sending Cache-Control).
+  "Access-Control-Allow-Headers": "*",
   "Cache-Control": "no-store"
 };
 

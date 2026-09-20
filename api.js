@@ -13,11 +13,6 @@ export class PVOutputAPI {
     try {
       const res = await fetch(url, {
         ...options,
-        headers: {
-          "Cache-Control": "no-cache, no-store, must-revalidate",
-          "Pragma": "no-cache",
-          ...(options.headers || {})
-        },
         signal: controller.signal
       });
       clearTimeout(timeoutId);
