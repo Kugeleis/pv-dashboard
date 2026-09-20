@@ -40,7 +40,7 @@ Zero secrets or credentials are hardcoded into the source code repository. Crede
 
 1. **URL Query Parameters** (convenience for bookmarks — *local use only, do not share*):
    ```text
-   https://yourusername.github.io/ha-dashboard/?sid=YOUR_SYSTEM_ID&key=YOUR_API_KEY
+   https://yourusername.github.io/pv-dashboard/?sid=YOUR_SYSTEM_ID&key=YOUR_API_KEY
    ```
 2. **Browser `localStorage`**: Persisted when entered via the settings dialog.
 3. **`secrets.json` File** (generated at deploy time — see below).
@@ -49,7 +49,7 @@ Zero secrets or credentials are hardcoded into the source code repository. Crede
 > [!IMPORTANT]
 > **GitHub Pages is static hosting — every file in the deployed artifact is world-readable.**
 > A `secrets.json` containing the API key can be read by anyone at
-> `https://yourusername.github.io/ha-dashboard/secrets.json`. GitHub "repository secrets"
+> `https://yourusername.github.io/pv-dashboard/secrets.json`. GitHub "repository secrets"
 > only protect the build, never the deployed output.
 >
 > Therefore, the deployment workflow **no longer writes the API key into `secrets.json`**.
@@ -191,7 +191,7 @@ Go to your repository → **Settings** → **Secrets and variables** → **Actio
 
 The workflow generates `secrets.json` (System ID + Worker URL only) and verifies its
 existence in the build log. To confirm on the live site, open
-`https://yourusername.github.io/ha-dashboard/secrets.json` — it must contain
+`https://yourusername.github.io/pv-dashboard/secrets.json` — it must contain
 `systemId` and `proxyUrl`, and **no API key**.
 
 ---
@@ -200,7 +200,7 @@ existence in the build log. To confirm on the live site, open
 
 | Symptom / check                        | How                                                                                                                            |
 | -------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------ |
-| Is `secrets.json` deployed?            | Open `https://yourusername.github.io/ha-dashboard/secrets.json` in the browser. 404 → deployment didn't run or secrets missing. |
+| Is `secrets.json` deployed?            | Open `https://yourusername.github.io/pv-dashboard/secrets.json` in the browser. 404 → deployment didn't run or secrets missing. |
 | Which secrets did the build see?       | Repo → **Actions** → latest *Deploy to GitHub Pages* run → step *"Generate secrets.json"* / *"Verify secrets.json"*.            |
 | Is the worker alive & key set?         | `curl https://…/workers.dev/health` → `"keyConfigured": true`. If `false`, run `wrangler secret put PVOUTPUT_API_KEY` again.    |
 | Does the worker reach PVOutput?        | `curl "https://…/workers.dev/getstatus.jsp?sid=YOUR_SID"` → expect CSV. `Err 402/403` → wrong key/sid or PVOutput rate limit.   |

@@ -1,5 +1,5 @@
 /**
- * PVOutput CORS proxy for the ha-dashboard GitHub Pages site.
+ * PVOutput CORS proxy for the pv-dashboard GitHub Pages site.
  *
  * Why a Worker? PVOutput.org does not send `Access-Control-Allow-Origin`
  * headers, so a browser hosted on GitHub Pages cannot call the API directly.
