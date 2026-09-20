@@ -5,3 +5,6 @@ node_modules
 index_test.html
 set_proxy.html
 secrets.json
+
+# Cloudflare wrangler local state
+.wrangler/
